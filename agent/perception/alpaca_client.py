@@ -8,6 +8,7 @@ from typing import Optional
 
 import httpx
 from alpaca.data import StockHistoricalDataClient
+from alpaca.data.enums import DataFeed
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading import TradingClient
@@ -92,11 +93,12 @@ class AlpacaClient:
             start=start,
             end=end,
             limit=limit,
+            feed=DataFeed.IEX,
         )
         bars = await asyncio.to_thread(self._stock_data.get_stock_bars, req)
         result = []
-        if symbol in bars:
-            for b in bars[symbol]:
+        if symbol in bars.data:
+            for b in bars.data[symbol]:
                 result.append({
                     "t": b.timestamp.isoformat(),
                     "o": float(b.open),

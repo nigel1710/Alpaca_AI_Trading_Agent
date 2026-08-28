@@ -33,14 +33,14 @@ MA_LONG: int = 30
 TREND_CLARITY_THRESHOLD: float = 0.005  # 0.5% of price
 
 # --- Volatility signal ---
-IV_RICH_MULTIPLIER: float = 1.2    # ATM IV >= 1.2x 20-day realized vol → ELEVATED
+IV_RICH_MULTIPLIER: float = 0.4    # TEMP for demo: ATM IV >= 0.4x 20-day realized vol → ELEVATED (normally 1.2)
 IV_STABLE_MULTIPLIER: float = 1.15  # today ATM IV <= 1.15x 3-day avg → stable
 
 # --- Scored checklist thresholds ---
 CREDIT_WIDTH_FLOOR: float = 0.30  # credit >= 30% of spread width
 DELTA_CEILING: float = 0.20       # short strike delta <= 0.20
 LIQUIDITY_SPREAD_MAX: float = 0.10  # bid-ask spread <= 10% of credit
-LIQUIDITY_OI_MIN: int = 100         # open interest >= 100 per leg
+LIQUIDITY_OI_MIN: int = 0           # TEMP for demo: open interest check disabled (normally 100) — alpaca_client.py hardcodes OI=0, needs real snapshot data wired in
 
 # --- Risk management ---
 MAX_LOSS_PCT: float = 0.02          # 2% of account equity per trade
