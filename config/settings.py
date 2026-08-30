@@ -38,7 +38,7 @@ IV_STABLE_MULTIPLIER: float = 1.15  # today ATM IV <= 1.15x 3-day avg → stable
 
 # --- Scored checklist thresholds ---
 CREDIT_WIDTH_FLOOR: float = 0.30  # credit >= 30% of spread width
-DELTA_CEILING: float = 0.20       # short strike delta <= 0.20
+DELTA_CEILING: float = 0.30       # short strike delta <= 0.30 (raised from 0.20 — collects more premium per checklist Check 5/7)
 LIQUIDITY_SPREAD_MAX: float = 0.10  # bid-ask spread <= 10% of credit
 LIQUIDITY_OI_MIN: int = 0           # TEMP for demo: open interest check disabled (normally 100) — alpaca_client.py hardcodes OI=0, needs real snapshot data wired in
 
