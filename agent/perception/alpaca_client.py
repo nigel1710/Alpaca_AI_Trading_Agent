@@ -12,7 +12,7 @@ from alpaca.data.enums import DataFeed
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading import TradingClient
-from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest
+from alpaca.trading.requests import GetOptionContractsRequest, GetOrdersRequest, MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
 
 try:
@@ -146,13 +146,42 @@ class AlpacaClient:
                 parsed = _parse_option_symbol(symbol)
                 if parsed:
                     contract.update(parsed)
-                # open interest via details endpoint — use 0 as default (fetched in snapshots)
-                contract["open_interest"] = 0
                 result.append(contract)
+
+            oi_map = await self._get_open_interest_map(underlying, expiry_date_gte, expiry_date_lte)
+            for contract in result:
+                contract["open_interest"] = oi_map.get(contract["symbol"]) or 0
+
             return result
         except Exception as exc:
             logger.warning("get_option_chain failed for %s: %s", underlying, exc)
             return []
+
+    async def _get_open_interest_map(
+        self, underlying: str, expiry_date_gte: str, expiry_date_lte: str
+    ) -> dict[str, int]:
+        """Fetch real open interest per contract symbol via the Trading API's
+        option contracts endpoint (the market-data snapshot API does not
+        report open interest at all)."""
+        oi_map: dict[str, int] = {}
+        page_token: Optional[str] = None
+        try:
+            while True:
+                req = GetOptionContractsRequest(
+                    underlying_symbols=[underlying],
+                    expiration_date_gte=expiry_date_gte,
+                    expiration_date_lte=expiry_date_lte,
+                    page_token=page_token,
+                )
+                resp = await asyncio.to_thread(self._trading.get_option_contracts, req)
+                for c in resp.option_contracts:
+                    oi_map[c.symbol] = int(c.open_interest) if c.open_interest is not None else 0
+                page_token = getattr(resp, "next_page_token", None)
+                if not page_token:
+                    break
+        except Exception as exc:
+            logger.warning("_get_open_interest_map failed for %s: %s", underlying, exc)
+        return oi_map
 
     async def get_option_snapshots(self, symbols: list[str]) -> dict[str, dict]:
         if self._option_data is None or not symbols:
