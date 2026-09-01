@@ -1,0 +1,18 @@
+name: Trigger scan
+
+on:
+  schedule:
+    # Every 15 min, ~9:30am-4pm ET Mon-Fri (13:30-20:00 UTC, approximated
+    # to :00/:15/:30/:45). Adjust for DST; doesn't skip market holidays.
+    - cron: "*/15 13-20 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /api/scan
+        run: |
+          curl -sf -X POST \
+            -H "X-Scan-Token: ${{ secrets.SCAN_TRIGGER_TOKEN }}" \
+            "${{ vars.SCAN_URL || 'https://options-alpha-agent.onrender.com' }}/api/scan"
