@@ -15,6 +15,13 @@ services:
         value: "false"
       - key: SCAN_TRIGGER_TOKEN
         generateValue: true
+      # Run the scheduler in-process rather than relying on external cron
+      # (GitHub Actions' scheduler never fired for this repo; Render cron is
+      # a paid feature). NOTE: a free instance spins down after ~15 min
+      # without inbound traffic, which stops the scheduler too — keep an
+      # uptime pinger on GET /api/health. See README.
+      - key: ENABLE_SCHEDULER
+        value: "true"
 
 # Scheduled scan triggering is handled by a GitHub Actions workflow
 # (.github/workflows/scan.yml) instead of a Render cron job, since Render's

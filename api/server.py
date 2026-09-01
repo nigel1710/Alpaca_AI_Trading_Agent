@@ -1,6 +1,8 @@
 """FastAPI REST server — read-only views into SQLite for the dashboard."""
 
+import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Optional
@@ -13,10 +15,13 @@ from fastapi.staticfiles import StaticFiles
 from agent.logging.cards import build_card, card_to_dict
 from agent.main import run_position_monitor, run_scan_cycle
 from agent.perception.alpaca_client import AlpacaClient
+from agent.scheduler import is_market_hours, scheduler_loop
 from config import settings
 from storage import db as storage
 from storage.db import close_db, get_db, init_db
 from datetime import date
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Options Alpha Agent API")
 
@@ -28,17 +33,31 @@ app.add_middleware(
 )
 
 _client: Optional[AlpacaClient] = None
+_scheduler_task: Optional[asyncio.Task] = None
+_scheduler_stop = asyncio.Event()
 
 
 @app.on_event("startup")
 async def startup() -> None:
-    global _client
+    global _client, _scheduler_task
     await init_db()
     _client = AlpacaClient()
+
+    if settings.ENABLE_SCHEDULER:
+        _scheduler_stop.clear()
+        _scheduler_task = asyncio.create_task(scheduler_loop(_scheduler_stop))
+    else:
+        logger.info("Scheduler disabled (set ENABLE_SCHEDULER=true to enable).")
 
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
+    if _scheduler_task is not None:
+        _scheduler_stop.set()
+        try:
+            await asyncio.wait_for(_scheduler_task, timeout=30)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            _scheduler_task.cancel()
     if _client:
         await _client.close()
     await close_db()
@@ -46,7 +65,18 @@ async def shutdown() -> None:
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "dry_run": settings.DRY_RUN, "watchlist": settings.WATCHLIST}
+    """Health check. Also the endpoint an uptime pinger should hit to keep a
+    free-tier instance (and therefore the scheduler) from spinning down."""
+    return {
+        "status": "ok",
+        "dry_run": settings.DRY_RUN,
+        "watchlist": settings.WATCHLIST,
+        "scheduler_enabled": settings.ENABLE_SCHEDULER,
+        "scheduler_running": _scheduler_task is not None and not _scheduler_task.done(),
+        "market_hours": is_market_hours(),
+        "scan_interval_minutes": settings.SCAN_INTERVAL_MINUTES,
+        "monitor_interval_minutes": settings.MONITOR_INTERVAL_MINUTES,
+    }
 
 
 @app.post("/api/scan")

@@ -70,6 +70,23 @@ Prints each pipeline stage as it runs:
 [TRADE SPY]  Order placed: dry-run-abc123
 ```
 
+### Monitor open positions only (no entry scanning)
+
+```bash
+python -m cli.main monitor
+```
+
+Checks every open position against its exit rules (profit target, stop loss,
+time exit) and closes what triggers. Kept separate from `scan` on purpose so
+open risk can be checked more often than new opportunities are sought — the
+scanner not running must never mean a stop-loss goes unchecked.
+
+It also **reconciles with the broker first**: any option position Alpaca
+reports that has no local record is rebuilt from the broker's own fills and
+brought back under exit management. This matters on hosted deployments with
+an ephemeral filesystem, where a restart can wipe the database while the
+positions live on.
+
 ### Continuous agent loop (market hours only)
 
 ```bash
@@ -77,6 +94,49 @@ python -m agent.main
 ```
 
 Runs every 15 minutes, 9:30–16:00 ET, Monday–Friday. Handles SIGINT/SIGTERM gracefully.
+
+### Scheduling on the hosted deployment
+
+The deployment does **not** use external cron. GitHub Actions' scheduled
+runner never fired for this repository (zero scheduled runs over several
+hours inside the window, while manual dispatches worked every time), and
+Render's cron jobs require a paid plan. Instead the schedule runs inside the
+app (`agent/scheduler.py`), started with the API server when
+`ENABLE_SCHEDULER=true`:
+
+- **positions monitored** every `MONITOR_INTERVAL_MINUTES` (default 5)
+- **new opportunities scanned** every `SCAN_INTERVAL_MINUTES` (default 15)
+- market hours only, in real Eastern time (follows DST automatically)
+
+**One external dependency remains.** A free Render instance spins down after
+~15 minutes without inbound HTTP traffic, which stops the scheduler with it.
+Point any uptime pinger (UptimeRobot, Better Uptime, Cronitor) at:
+
+```
+GET https://<your-app>.onrender.com/api/health
+```
+
+every 5 minutes. That request needs no authentication, keeps the instance
+awake, and returns the scheduler's state so the same ping doubles as a
+health check:
+
+```json
+{"status":"ok","scheduler_enabled":true,"scheduler_running":true,"market_hours":true}
+```
+
+If `scheduler_running` is ever `false` while `scheduler_enabled` is `true`,
+the background task died and the service needs a restart.
+
+To force a scan on demand (before a demo, say):
+
+```bash
+curl -X POST -H "X-Scan-Token: $SCAN_TRIGGER_TOKEN" \
+  https://<your-app>.onrender.com/api/scan
+
+# exits only:
+curl -X POST -H "X-Scan-Token: $SCAN_TRIGGER_TOKEN" \
+  https://<your-app>.onrender.com/api/monitor
+```
 
 ### Score distribution report
 

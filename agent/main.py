@@ -23,6 +23,7 @@ from agent.evaluation.scoring import build_why_not, confidence_label, resolve_ou
 from agent.execution.circuit_breaker import check_circuit_breaker, init_daily_circuit_breaker
 from agent.execution.monitor import monitor_open_positions
 from agent.execution.orders import make_client_order_id, place_spread_order
+from agent.execution.reconcile import reconcile_positions
 from agent.logging.events import (
     emit_final_decision,
     emit_market_analysis,
@@ -95,6 +96,27 @@ async def run_position_monitor(
     running must never mean a stop-loss goes unchecked.
     """
     cycle_id = cycle_id or new_cycle_id()
+
+    # Adopt any broker positions we have no local record of before evaluating
+    # exits — on an ephemeral filesystem the DB can be wiped while positions
+    # live on, and an unknown position is an unmanaged one.
+    try:
+        adopted = await reconcile_positions(client, db)
+        for item in adopted:
+            await storage.insert_event(
+                cycle_id=cycle_id,
+                stage="POSITION_RECONCILED",
+                payload=item,
+                underlying=item.get("underlying"),
+            )
+            _verbose_print(
+                verbose,
+                f"[RECONCILED]  {item.get('underlying')} {item.get('strategy')} "
+                f"{item.get('expiry')} — adopted from broker",
+            )
+    except Exception:
+        logger.exception("Position reconciliation failed")
+
     open_positions_db = await storage.get_open_positions_db()
     if not open_positions_db:
         return []

@@ -1,10 +1,11 @@
 name: Trigger scan
 
+# Scheduling now lives in the app itself (agent/scheduler.py), because
+# GitHub's scheduled-workflow runner never fired for this repo — zero
+# scheduled runs over several hours inside the window, while manual
+# dispatches worked every time. This workflow is kept as a manual escape
+# hatch for forcing a scan (e.g. to refresh the demo before presenting).
 on:
-  schedule:
-    # Every 15 min, ~9:30am-4pm ET Mon-Fri (13:30-20:00 UTC, approximated
-    # to :00/:15/:30/:45). Adjust for DST; doesn't skip market holidays.
-    - cron: "*/15 13-20 * * 1-5"
   workflow_dispatch: {}
 
 jobs:

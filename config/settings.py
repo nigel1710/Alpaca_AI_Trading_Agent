@@ -96,6 +96,15 @@ WATCH_EXPIRY_CYCLES: int = 2        # WATCH items expire after 2 scan cycles
 
 # --- Scheduling ---
 SCAN_INTERVAL_MINUTES: int = 15
+# Open positions are checked far more often than we look for new entries —
+# a stop that is only evaluated every 15 minutes is a slow stop.
+MONITOR_INTERVAL_MINUTES: int = 5
+# Run the in-process scheduler alongside the API server. Off by default so
+# local CLI use and tests never start a background trader; the hosted
+# deployment opts in via ENABLE_SCHEDULER=true.
+ENABLE_SCHEDULER: bool = os.getenv("ENABLE_SCHEDULER", "false").strip().lower() in (
+    "true", "1", "yes",
+)
 
 # --- Score bands / confidence (strategy doc §11) ---
 #   80-100 → HIGH   conviction → TRADE
