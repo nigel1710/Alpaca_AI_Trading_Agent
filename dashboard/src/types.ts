@@ -126,6 +126,17 @@ export interface BaselineRecord {
   details: Record<string, unknown>
 }
 
+export interface Health {
+  status: string
+  dry_run: boolean
+  watchlist: string[]
+  scheduler_enabled: boolean
+  scheduler_running: boolean
+  market_hours: boolean
+  scan_interval_minutes: number
+  monitor_interval_minutes: number
+}
+
 export interface CircuitBreaker {
   date: string
   order_attempts: number

@@ -1,104 +1,41 @@
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
-  useDecisions,
-  usePositions,
-  useWatchItems,
-  useEvents,
-  usePipelineLatest,
-  useAccount,
-  useBaselines,
-  useCircuitBreaker,
+  useDecisions, usePositions, useWatchItems, usePipelineLatest,
+  useAccount, useCircuitBreaker, useHealth, useSecondsSince,
 } from './api'
+import Masthead from './components/Masthead'
 import PipelinePanel from './components/PipelinePanel'
 import PositionsPanel from './components/PositionsPanel'
-import DecisionCardComponent from './components/DecisionCard'
 import RegimePanel from './components/RegimePanel'
-import EquityCurve from './components/EquityCurve'
+import StatsRow from './components/StatsRow'
+import DecisionCardComponent from './components/DecisionCard'
+import { Badge, DataState, Panel } from './components/ui'
 import type { Decision } from './types'
 
-const palette = {
-  bg: '#0a0a0f',
-  panel: '#12121a',
-  border: '#1e1e2e',
-  text: '#e2e8f0',
-  muted: '#64748b',
-  green: '#22c55e',
-  red: '#ef4444',
-  amber: '#f59e0b',
-  blue: '#3b82f6',
-}
+type Filter = 'ALL' | 'TRADE' | 'WATCH' | 'REJECT' | 'STAND_ASIDE'
+const FILTERS: Filter[] = ['ALL', 'TRADE', 'WATCH', 'REJECT', 'STAND_ASIDE']
 
-const s: Record<string, any> = {
-  root: {
-    background: palette.bg,
-    color: palette.text,
-    minHeight: '100vh',
-    fontFamily: "'Courier New', monospace",
-    padding: 16,
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '12px 16px',
-    background: palette.panel,
-    border: `1px solid ${palette.border}`,
-    borderRadius: 6,
-    marginBottom: 16,
-  },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: palette.amber, letterSpacing: 2 },
-  headerRight: { display: 'flex', gap: 24, alignItems: 'center', fontSize: 12 },
-  badge: (live: boolean): React.CSSProperties => ({
-    padding: '2px 8px',
-    borderRadius: 3,
-    background: live ? '#2e1a1a' : '#1a2e1a',
-    color: live ? palette.red : palette.green,
-    fontSize: 10,
-    fontWeight: 'bold',
-    border: `1px solid ${live ? palette.red : palette.green}`,
-  }),
-  equity: { color: palette.green, fontWeight: 'bold' },
-  clock: { color: palette.muted },
-  grid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 },
-  leftCol: {},
-  rightCol: {},
-  sectionTitle: {
-    fontSize: 11,
-    color: palette.muted,
-    letterSpacing: 2,
-    marginBottom: 8,
-    marginTop: 16,
-  },
-  cbHalt: {
-    background: '#2e1a1a',
-    border: `1px solid ${palette.red}`,
-    borderRadius: 4,
-    padding: '8px 12px',
-    color: palette.red,
-    fontSize: 11,
-    marginBottom: 16,
-  },
-  watchPanel: {
-    background: palette.panel,
-    border: `1px solid ${palette.amber}`,
-    borderRadius: 6,
-    padding: 16,
-    marginBottom: 16,
-  },
-  watchItem: {
-    padding: '6px 0',
-    borderBottom: `1px solid #1a1a2e`,
-    fontSize: 11,
-  },
-}
+function useTheme(): ['light' | 'dark', () => void] {
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = localStorage.getItem('oaa-theme')
+      if (saved === 'light' || saved === 'dark') return saved
+    } catch {
+      /* private mode / blocked storage — fall through to the default */
+    }
+    return 'light'
+  })
 
-function useNow(): string {
-  const [now, setNow] = React.useState(new Date().toLocaleTimeString())
-  React.useEffect(() => {
-    const id = setInterval(() => setNow(new Date().toLocaleTimeString()), 1000)
-    return () => clearInterval(id)
-  }, [])
-  return now
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    try {
+      localStorage.setItem('oaa-theme', theme)
+    } catch {
+      /* not persisting is fine; the toggle still works for this session */
+    }
+  }, [theme])
+
+  return [theme, () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))]
 }
 
 export default function App() {
@@ -106,101 +43,192 @@ export default function App() {
   const decisions = useDecisions(100)
   const positions = usePositions()
   const watchItems = useWatchItems('WATCHING')
-  const events = useEvents(200)
   const pipeline = usePipelineLatest()
-  const baselines = useBaselines()
   const cb = useCircuitBreaker()
-  const now = useNow()
+  const health = useHealth()
 
-  // Detect DRY_RUN from a simple health check (or assume based on cookie)
-  const [dryRun, setDryRun] = React.useState(true)
-  React.useEffect(() => {
-    fetch('/api/health')
-      .then((r) => r.json())
-      .then((d) => setDryRun(d.dry_run !== false))
-      .catch(() => {})
-  }, [])
+  const [theme, toggleTheme] = useTheme()
+  const [filter, setFilter] = useState<Filter>('ALL')
 
-  const isHalted = cb && cb.halted === 1
+  const secondsSince = useSecondsSince(decisions.updatedAt)
+  const connected = !decisions.error && !health.error
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { ALL: decisions.data.length }
+    for (const d of decisions.data) c[d.outcome] = (c[d.outcome] ?? 0) + 1
+    return c
+  }, [decisions.data])
+
+  const visible: Decision[] = useMemo(
+    () =>
+      filter === 'ALL'
+        ? decisions.data
+        : decisions.data.filter((d) => d.outcome === filter),
+    [decisions.data, filter]
+  )
+
+  const halted = cb.data?.halted === 1
 
   return (
-    <div style={s.root}>
-      {/* Header */}
-      <div style={s.header}>
-        <div style={s.headerTitle}>OPTIONS ALPHA AGENT</div>
-        <div style={s.headerRight}>
-          <span style={s.badge(dryRun === false)}>{dryRun ? 'DRY RUN' : 'LIVE'}</span>
-          {account && (
-            <span style={s.equity}>Equity: ${account.equity.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-          )}
-          <span style={s.clock}>{now} ET</span>
-        </div>
-      </div>
+    <div className="app">
+      <Masthead
+        account={account.data}
+        health={health.data}
+        connected={connected}
+        secondsSinceUpdate={secondsSince}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
 
-      {/* Circuit breaker alert */}
-      {isHalted && (
-        <div style={s.cbHalt}>
-          ⚠ CIRCUIT BREAKER ACTIVE — {cb.halt_reason} — No new orders until next trading day.
+      {halted && (
+        <div
+          className="panel"
+          role="alert"
+          style={{
+            borderLeft: '3px solid var(--critical)',
+            background: 'var(--critical-wash)',
+            marginBottom: 16,
+            padding: '12px 16px',
+            fontSize: 13,
+          }}
+        >
+          <strong>Circuit breaker active</strong> — {cb.data?.halt_reason}. No new
+          orders until the next trading day.
         </div>
       )}
 
-      {/* Pipeline */}
-      <PipelinePanel pipeline={pipeline} />
+      <div style={{ marginBottom: 16 }}>
+        <Panel title="Activity">
+          <StatsRow decisions={decisions.data} />
+        </Panel>
+      </div>
 
-      <div style={s.grid}>
-        <div style={s.leftCol}>
-          {/* Positions */}
-          <PositionsPanel positions={positions} />
+      <div style={{ marginBottom: 16 }}>
+        <Panel title="Decision pipeline">
+          <DataState
+            loading={pipeline.loading}
+            error={pipeline.error}
+            empty={Object.keys(pipeline.data).length === 0}
+            emptyText="No scan cycles recorded yet."
+            emptyIcon="◷"
+          >
+            <PipelinePanel pipeline={pipeline.data} />
+          </DataState>
+        </Panel>
+      </div>
 
-          {/* Regime */}
-          <RegimePanel events={events} />
+      <div className="grid-main">
+        <div className="stack">
+          <Panel title={`Open positions (${positions.data.length})`} flush>
+            <DataState
+              loading={positions.loading}
+              error={positions.error}
+              empty={positions.data.length === 0}
+              emptyText="No open positions."
+              emptyIcon="○"
+            >
+              <PositionsPanel positions={positions.data} />
+            </DataState>
+          </Panel>
 
-          {/* WATCH items */}
-          <div style={s.watchPanel}>
-            <div style={{ fontSize: 11, color: palette.muted, letterSpacing: 2, marginBottom: 10 }}>
-              WATCHING ({watchItems.length})
-            </div>
-            {watchItems.length === 0 && (
-              <div style={{ color: palette.muted, fontSize: 12 }}>No items in WATCH state.</div>
-            )}
-            {watchItems.map((item) => (
-              <div key={item.id} style={s.watchItem}>
-                <span style={{ color: palette.amber, fontWeight: 'bold' }}>{item.underlying}</span>
-                {' | '}
-                <span>{item.strategy}</span>
-                {' | '}
-                <span style={{ color: item.score >= 80 ? palette.green : palette.amber }}>
-                  {item.score}/100
-                </span>
-                {' | '}
-                <span style={{ color: palette.muted }}>
-                  {item.cycles_remaining} cycle(s) left
-                </span>
-                <div style={{ color: palette.muted, fontSize: 9, marginTop: 2 }}>
-                  Needs: {item.promoting_condition?.slice(0, 80)}
-                </div>
+          <Panel title="Market regime" flush>
+            <DataState
+              loading={decisions.loading}
+              error={decisions.error}
+              empty={decisions.data.length === 0}
+              emptyText="No regime readings yet."
+              emptyIcon="◐"
+            >
+              <RegimePanel decisions={decisions.data} />
+            </DataState>
+          </Panel>
+
+          <Panel title={`Watching (${watchItems.data.length})`}>
+            <DataState
+              loading={watchItems.loading}
+              error={watchItems.error}
+              empty={watchItems.data.length === 0}
+              emptyText="Nothing in the watch list."
+              emptyIcon="◇"
+            >
+              <div style={{ display: 'grid', gap: 12 }}>
+                {watchItems.data.map((item) => (
+                  <div key={item.id}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <strong className="mono">{item.underlying}</strong>
+                      <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                        {item.strategy}
+                      </span>
+                      <Badge tone="warning" dot={false}>{item.score}/100</Badge>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        {item.cycles_remaining} cycle
+                        {item.cycles_remaining === 1 ? '' : 's'} left
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: 'var(--text-muted)',
+                        marginTop: 3,
+                      }}
+                    >
+                      {item.promoting_condition}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-
-          {/* Equity curve */}
-          <EquityCurve baselines={baselines} />
+            </DataState>
+          </Panel>
         </div>
 
-        <div style={s.rightCol}>
-          {/* Decision log */}
-          <div style={{ fontSize: 11, color: palette.muted, letterSpacing: 2, marginBottom: 8 }}>
-            DECISION LOG ({decisions.length})
-          </div>
-          {decisions.map((d: Decision) => (
-            <DecisionCardComponent key={d.id} decision={d} />
-          ))}
-          {decisions.length === 0 && (
-            <div style={{ color: palette.muted, fontSize: 12 }}>
-              No decisions yet — waiting for first scan cycle.
+        <Panel
+          title={`Decisions (${visible.length})`}
+          flush
+          actions={
+            <div className="chips">
+              {FILTERS.map((f) => (
+                <button
+                  key={f}
+                  className="chip"
+                  aria-pressed={filter === f}
+                  onClick={() => setFilter(f)}
+                >
+                  {f === 'STAND_ASIDE' ? 'ASIDE' : f}
+                  <span className="count">{counts[f] ?? 0}</span>
+                </button>
+              ))}
             </div>
-          )}
-        </div>
+          }
+        >
+          <div className="scroll-y">
+            <DataState
+              loading={decisions.loading}
+              error={decisions.error}
+              empty={visible.length === 0}
+              emptyText={
+                decisions.data.length === 0
+                  ? 'No decisions yet — waiting for the first scan cycle.'
+                  : `No ${filter.toLowerCase().replace('_', ' ')} decisions.`
+              }
+              emptyIcon="◇"
+            >
+              {visible.map((d, i) => (
+                <DecisionCardComponent
+                  key={`${d.cycle_id}-${d.underlying}-${d.ts}`}
+                  decision={d}
+                  defaultOpen={i === 0}
+                />
+              ))}
+            </DataState>
+          </div>
+        </Panel>
       </div>
     </div>
   )

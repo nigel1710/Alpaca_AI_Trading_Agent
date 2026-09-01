@@ -1,12 +1,23 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>Options Alpha Agent</title>
     <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      body { background: #0a0a0f; color: #e2e8f0; font-family: 'Courier New', monospace; }
+      /* Paint the page background before the bundle loads so there is no
+         flash of the wrong theme. */
+      html { background: #f9f9f7; }
+      html[data-theme="dark"] { background: #0d0d0d; }
+      @media (prefers-color-scheme: dark) {
+        html:not([data-theme="light"]) { background: #0d0d0d; }
+      }
+      .sr-only {
+        position: absolute; width: 1px; height: 1px;
+        padding: 0; margin: -1px; overflow: hidden;
+        clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+      }
     </style>
   </head>
   <body>

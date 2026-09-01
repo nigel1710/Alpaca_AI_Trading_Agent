@@ -2,115 +2,111 @@ import React from 'react'
 import type { Event } from '../types'
 
 const STAGES = [
-  'MARKET_SCAN',
-  'MARKET_ANALYSIS',
-  'STRATEGY_SELECTION',
-  'OPPORTUNITY_EVALUATION',
-  'RISK_REVIEW',
-  'FINAL_DECISION',
+  { key: 'MARKET_SCAN', label: 'Scan' },
+  { key: 'MARKET_ANALYSIS', label: 'Analyse' },
+  { key: 'STRATEGY_SELECTION', label: 'Select' },
+  { key: 'OPPORTUNITY_EVALUATION', label: 'Score' },
+  { key: 'RISK_REVIEW', label: 'Risk gate' },
+  { key: 'FINAL_DECISION', label: 'Decision' },
 ]
-
-const STAGE_LABELS: Record<string, string> = {
-  MARKET_SCAN: 'Market Scan',
-  MARKET_ANALYSIS: 'Analysis',
-  STRATEGY_SELECTION: 'Strategy',
-  OPPORTUNITY_EVALUATION: 'Evaluation',
-  RISK_REVIEW: 'Risk Gate',
-  FINAL_DECISION: 'Decision',
-}
-
-const s: Record<string, any> = {
-  panel: {
-    background: '#12121a',
-    border: '1px solid #1e1e2e',
-    borderRadius: 6,
-    padding: 16,
-    marginBottom: 16,
-  },
-  title: { fontSize: 11, color: '#64748b', letterSpacing: 2, marginBottom: 12 },
-  cycleRow: { marginBottom: 12 },
-  cycleId: { fontSize: 10, color: '#64748b', marginBottom: 6 },
-  stages: { display: 'flex', gap: 4, flexWrap: 'wrap' as const },
-  stage: (active: boolean, done: boolean): React.CSSProperties => ({
-    background: done ? '#1a2e1a' : active ? '#1e1e2e' : '#0d0d14',
-    border: `1px solid ${done ? '#22c55e' : active ? '#3b82f6' : '#1e1e2e'}`,
-    borderRadius: 4,
-    padding: '6px 10px',
-    fontSize: 10,
-    color: done ? '#22c55e' : active ? '#93c5fd' : '#4b5563',
-    minWidth: 80,
-  }),
-  stageName: { fontWeight: 'bold', marginBottom: 2 },
-  stageUnderlying: { color: '#f59e0b', fontSize: 9 },
-  stageTime: { fontSize: 9, color: '#64748b', marginTop: 2 },
-  stagePayload: { fontSize: 9, color: '#94a3b8', marginTop: 2, maxWidth: 120, wordBreak: 'break-word' as const },
-}
 
 function formatTime(ts: string): string {
   try {
-    return new Date(ts).toLocaleTimeString()
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date(ts))
   } catch {
     return ts
   }
 }
 
-function getPayloadSummary(stage: string, payload: Record<string, unknown>): string {
-  if (stage === 'FINAL_DECISION') return `→ ${payload.outcome}`
-  if (stage === 'OPPORTUNITY_EVALUATION') return `Score: ${payload.score} | ${payload.outcome}`
-  if (stage === 'STRATEGY_SELECTION') return String(payload.strategy || '')
+function summarise(stage: string, payload: Record<string, unknown>): string {
+  if (stage === 'FINAL_DECISION') return String(payload.outcome ?? '')
+  if (stage === 'OPPORTUNITY_EVALUATION') return `${payload.score} · ${payload.outcome}`
+  if (stage === 'STRATEGY_SELECTION') return String(payload.strategy ?? '')
   if (stage === 'MARKET_ANALYSIS') {
-    return `${payload.vol_condition} / ${payload.trend_condition}`
+    return `${payload.vol_regime ?? payload.vol_condition ?? ''} / ${payload.trend_condition ?? ''}`
   }
-  if (stage === 'RISK_REVIEW') return payload.approved ? '✓ APPROVED' : '✗ REJECTED'
+  if (stage === 'RISK_REVIEW') return payload.approved ? 'approved' : 'rejected'
   return ''
 }
 
-interface Props {
-  pipeline: Record<string, Event[]>
-}
-
-export default function PipelinePanel({ pipeline }: Props) {
+export default function PipelinePanel({ pipeline }: { pipeline: Record<string, Event[]> }) {
   const cycleIds = Object.keys(pipeline)
 
   return (
-    <div style={s.panel}>
-      <div style={s.title}>DECISION PIPELINE</div>
-      {cycleIds.length === 0 && (
-        <div style={{ color: '#64748b', fontSize: 12 }}>Waiting for first scan cycle...</div>
-      )}
+    <div style={{ display: 'grid', gap: 18 }}>
       {cycleIds.map((cycleId) => {
         const events = pipeline[cycleId]
-        const stageMap = new Map<string, Event[]>()
-        for (const e of events) {
-          const list = stageMap.get(e.stage) || []
-          list.push(e)
-          stageMap.set(e.stage, list)
+        const present = new Set(events.map((e) => e.stage))
+        const latestFor = (stage: string) => {
+          const list = events.filter((e) => e.stage === stage)
+          return list[list.length - 1]
         }
-        const presentStages = new Set(events.map((e) => e.stage))
 
         return (
-          <div key={cycleId} style={s.cycleRow}>
-            <div style={s.cycleId}>cycle: {cycleId}</div>
-            <div style={s.stages}>
-              {STAGES.map((stage, i) => {
-                const stageEvents = stageMap.get(stage) || []
-                const done = presentStages.has(stage)
-                const active = !done && STAGES.slice(0, i).every((s) => presentStages.has(s))
-                const latestEvent = stageEvents[stageEvents.length - 1]
-                const underlying = latestEvent?.underlying
-                const payload = (latestEvent?.payload as Record<string, unknown>) || {}
-                const summary = done ? getPayloadSummary(stage, payload) : ''
-
+          <div key={cycleId}>
+            <div
+              className="mono"
+              style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 7 }}
+            >
+              cycle {cycleId}
+            </div>
+            <ol
+              style={{
+                display: 'flex',
+                gap: 6,
+                listStyle: 'none',
+                margin: 0,
+                padding: 0,
+                overflowX: 'auto',
+              }}
+            >
+              {STAGES.map((stage) => {
+                const done = present.has(stage.key)
+                const ev = latestFor(stage.key)
                 return (
-                  <div key={stage} style={s.stage(active, done)}>
-                    <div style={s.stageName}>{STAGE_LABELS[stage]}</div>
-                    {underlying && <div style={s.stageUnderlying}>{underlying}</div>}
-                    {summary && <div style={s.stagePayload}>{summary}</div>}
-                    {latestEvent && <div style={s.stageTime}>{formatTime(latestEvent.ts)}</div>}
-                  </div>
+                  <li
+                    key={stage.key}
+                    style={{
+                      flex: '1 1 0',
+                      minWidth: 96,
+                      padding: '8px 10px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: done ? 'var(--surface-2)' : 'transparent',
+                      border: `1px solid ${done ? 'var(--border)' : 'transparent'}`,
+                      borderTop: `2px solid ${done ? 'var(--good)' : 'var(--border-firm)'}`,
+                      opacity: done ? 1 : 0.45,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, fontWeight: 600 }}>{stage.label}</div>
+                    {ev && (
+                      <>
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: 'var(--text-secondary)',
+                            marginTop: 3,
+                            wordBreak: 'break-word',
+                          }}
+                        >
+                          {summarise(stage.key, ev.payload)}
+                        </div>
+                        <div
+                          className="mono"
+                          style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 3 }}
+                        >
+                          {formatTime(ev.ts)}
+                        </div>
+                      </>
+                    )}
+                  </li>
                 )
               })}
-            </div>
+            </ol>
           </div>
         )
       })}
