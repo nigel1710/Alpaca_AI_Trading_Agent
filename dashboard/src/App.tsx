@@ -28,7 +28,7 @@ const palette = {
   blue: '#3b82f6',
 }
 
-const s: Record<string, React.CSSProperties> = {
+const s: Record<string, any> = {
   root: {
     background: palette.bg,
     color: palette.text,

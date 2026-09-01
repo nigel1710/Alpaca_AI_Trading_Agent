@@ -51,7 +51,7 @@ function extractRegime(events: Event[]): Record<string, RegimeData> {
   return regime
 }
 
-const s: Record<string, React.CSSProperties> = {
+const s: Record<string, any> = {
   panel: {
     background: '#12121a',
     border: '1px solid #1e1e2e',

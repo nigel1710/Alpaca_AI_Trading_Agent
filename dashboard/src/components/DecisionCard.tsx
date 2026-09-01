@@ -8,7 +8,7 @@ const OUTCOME_COLORS: Record<string, string> = {
   EXPIRED: '#64748b',
 }
 
-const s: Record<string, React.CSSProperties> = {
+const s: Record<string, any> = {
   card: (outcome: string): React.CSSProperties => ({
     background: '#12121a',
     border: `1px solid ${OUTCOME_COLORS[outcome] || '#1e1e2e'}`,

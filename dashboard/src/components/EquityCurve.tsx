@@ -44,7 +44,7 @@ function buildChartData(
   return Object.values(byTs).sort((a, b) => a.ts.localeCompare(b.ts))
 }
 
-const s: Record<string, React.CSSProperties> = {
+const s: Record<string, any> = {
   panel: {
     background: '#12121a',
     border: '1px solid #1e1e2e',

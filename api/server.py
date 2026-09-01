@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from agent.logging.cards import build_card, card_to_dict
+from agent.main import run_scan_cycle
 from agent.perception.alpaca_client import AlpacaClient
 from config import settings
 from storage import db as storage
@@ -22,7 +23,7 @@ app = FastAPI(title="Options Alpha Agent API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -45,6 +46,14 @@ async def shutdown() -> None:
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "dry_run": settings.DRY_RUN, "watchlist": settings.WATCHLIST}
+
+
+@app.post("/api/scan")
+async def trigger_scan():
+    """Manually trigger one scan cycle — for demo deployments with no scheduler."""
+    db = await get_db()
+    await run_scan_cycle(db, _client, verbose=False)
+    return {"status": "cycle complete"}
 
 
 @app.get("/api/events")
