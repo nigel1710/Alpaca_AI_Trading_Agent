@@ -15,3 +15,27 @@ services:
         value: "false"
       - key: SCAN_TRIGGER_TOKEN
         generateValue: true
+
+  # Triggers a scan every 15 min, ~9:30am-4pm ET Mon-Fri (13:30-20:00 UTC,
+  # approximated to :00/:15/:30/:45 — adjust for DST, doesn't skip holidays).
+  # Calls the same token-protected /api/scan endpoint on the web service
+  # above, so it writes to that service's live DB rather than its own.
+  - type: cron
+    name: options-alpha-scan-trigger
+    env: docker
+    dockerfilePath: ./Dockerfile
+    schedule: "*/15 13-20 * * 1-5"
+    dockerCommand: >
+      python3 -c "
+      import os, urllib.request;
+      req = urllib.request.Request(os.environ['SCAN_URL'] + '/api/scan', method='POST', headers={'X-Scan-Token': os.environ['SCAN_TRIGGER_TOKEN']});
+      print(urllib.request.urlopen(req, timeout=120).read())
+      "
+    envVars:
+      - key: SCAN_URL
+        value: https://options-alpha-agent.onrender.com
+      - key: SCAN_TRIGGER_TOKEN
+        fromService:
+          name: options-alpha-agent
+          type: web
+          envVarKey: SCAN_TRIGGER_TOKEN
