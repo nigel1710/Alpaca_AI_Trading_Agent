@@ -87,6 +87,10 @@ DEBIT_PROFIT_CAPTURE: float = 0.50  # take 50% of max achievable profit
 DEBIT_STOP_LOSS_PCT: float = 0.50   # stop after losing 50% of premium paid
 DEBIT_TIME_EXIT_DTE: int = 7        # close at 7 DTE — theta decay accelerates
 
+# How far to cross the market when closing, so exit orders actually fill.
+# An exit that rests unfilled is the same as having no stop at all.
+CLOSE_SLIPPAGE_BUFFER: float = 0.05  # 5% through the current spread value
+
 # --- WATCH lifecycle ---
 WATCH_EXPIRY_CYCLES: int = 2        # WATCH items expire after 2 scan cycles
 

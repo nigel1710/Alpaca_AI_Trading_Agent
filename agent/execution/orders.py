@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import uuid
 from datetime import date
 from typing import Optional
 
@@ -175,6 +176,37 @@ async def place_spread_order(
     return result
 
 
+async def _close_limit_price(client: AlpacaClient, position: dict) -> float:
+    """Marketable limit price for closing `position`, from live quotes.
+
+    A fixed nominal price never fills — buying a credit spread back can cost
+    far more than a token amount, and the order simply rests unfilled while
+    the position stays open. So price against the current market and cross it
+    by CLOSE_SLIPPAGE_BUFFER to get filled:
+
+      CREDIT close (buying back)  → pay a little ABOVE the cost to close
+      DEBIT  close (selling out)  → accept a little BELOW the proceeds
+    """
+    short_quote = await client.get_latest_quote(position.get("short_symbol", ""))
+    long_quote = await client.get_latest_quote(position.get("long_symbol", ""))
+
+    short_ask = short_quote.get("ask", 0.0) or 0.0
+    long_bid = long_quote.get("bid", 0.0) or 0.0
+    short_bid = short_quote.get("bid", 0.0) or 0.0
+    long_ask = long_quote.get("ask", 0.0) or 0.0
+
+    buf = settings.CLOSE_SLIPPAGE_BUFFER
+    if position.get("strategy_type") == "DEBIT":
+        proceeds = max(long_bid - short_ask, 0.0)
+        price = proceeds * (1.0 - buf)
+    else:
+        cost = max(short_ask - long_bid, 0.0)
+        price = cost * (1.0 + buf)
+
+    # Never submit a zero/negative limit — that is the bug this replaces.
+    return max(round(price, 2), 0.01)
+
+
 async def close_spread_order(
     client: AlpacaClient,
     db,
@@ -224,18 +256,26 @@ async def close_spread_order(
             legs.append({"symbol": position["call_short_symbol"], "side": "buy", "ratio_qty": "1", "position_intent": "buy_to_close"})
             legs.append({"symbol": position["call_long_symbol"], "side": "sell", "ratio_qty": "1", "position_intent": "sell_to_close"})
 
-    close_client_id = f"close-{client_order_id[:12]}"
+    # Unique per attempt: a rejected or cancelled close must be retryable,
+    # which a fixed client_order_id would block as a duplicate.
+    close_client_id = f"close-{client_order_id[:8]}-{uuid.uuid4().hex[:6]}"
 
     try:
+        limit_price = await _close_limit_price(client, position)
         result = await client.place_mleg_order(
             legs=legs,
-            limit_price=0.05,  # small debit to close; will be market-ish
+            limit_price=limit_price,
             qty=position.get("qty", 1),
             client_order_id=close_client_id,
         )
+        logger.info(
+            "Close order for %s submitted at limit %.2f", client_order_id, limit_price
+        )
     except Exception as exc:
         logger.error("Failed to close position %s: %s", client_order_id, exc)
-        result = {"id": None, "status": "error", "error": str(exc)}
+        # Leave the position OPEN so the next monitor pass retries it. Marking
+        # it closed here would strand a live position with no exit management.
+        return {"id": None, "status": "error", "error": str(exc)}
 
     # Map reason to state
     state_map = {
