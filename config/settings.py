@@ -19,6 +19,11 @@ ALPACA_BASE_URL: str = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.ma
 _dry_run_env = os.getenv("DRY_RUN", "true").strip().lower()
 DRY_RUN: bool = _dry_run_env not in ("false", "0", "no")
 
+# Optional shared-secret token required to call POST /api/scan when set.
+# Leave unset for local dev; set on public deployments to prevent anyone
+# with the URL from triggering scans (and, if DRY_RUN=false, real orders).
+SCAN_TRIGGER_TOKEN: str = os.getenv("SCAN_TRIGGER_TOKEN", "")
+
 # --- Watchlist ---
 WATCHLIST: list[str] = ["SPY", "QQQ", "IWM"]
 

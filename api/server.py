@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -49,8 +49,11 @@ async def health():
 
 
 @app.post("/api/scan")
-async def trigger_scan():
-    """Manually trigger one scan cycle — for demo deployments with no scheduler."""
+async def trigger_scan(x_scan_token: Optional[str] = Header(None)):
+    """Manually trigger one scan cycle — for demo deployments with no scheduler.
+    Requires X-Scan-Token header to match SCAN_TRIGGER_TOKEN when that env var is set."""
+    if settings.SCAN_TRIGGER_TOKEN and x_scan_token != settings.SCAN_TRIGGER_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid or missing X-Scan-Token")
     db = await get_db()
     await run_scan_cycle(db, _client, verbose=False)
     return {"status": "cycle complete"}

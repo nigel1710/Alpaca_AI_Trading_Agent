@@ -12,4 +12,6 @@ services:
       - key: ALPACA_BASE_URL
         value: https://paper-api.alpaca.markets
       - key: DRY_RUN
-        value: "true"
+        value: "false"
+      - key: SCAN_TRIGGER_TOKEN
+        generateValue: true
