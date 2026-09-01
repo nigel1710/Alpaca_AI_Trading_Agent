@@ -33,7 +33,7 @@ async def get_atm_option_chain(
     expiry_gte: str,
     expiry_lte: str,
 ) -> list[dict]:
-    """Fetch option chain filtered to ATM +/- 15% strikes."""
+    """Fetch option chain filtered to ATM +/- 15% strikes, with real open interest."""
     chain = await client.get_option_chain(underlying, expiry_gte, expiry_lte)
     filtered = []
     for contract in chain:
@@ -44,6 +44,18 @@ async def get_atm_option_chain(
         if moneyness <= 0.15:
             contract["moneyness"] = round(moneyness, 4)
             filtered.append(contract)
+
+    # Open interest is fetched only for the surviving strike band — pulling it
+    # for the whole chain across a 45-day window would be thousands of pages.
+    if filtered:
+        await client.enrich_open_interest(
+            filtered,
+            underlying,
+            expiry_gte,
+            expiry_lte,
+            strike_gte=current_price * 0.85,
+            strike_lte=current_price * 1.15,
+        )
     return filtered
 
 

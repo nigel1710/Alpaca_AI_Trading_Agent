@@ -16,14 +16,50 @@ _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 _db_conn: Optional[aiosqlite.Connection] = None
 
 
+# Columns added after the initial schema shipped. CREATE TABLE IF NOT EXISTS
+# will not add them to a database that already exists, so they are applied
+# individually and idempotently on every startup.
+_MIGRATIONS: dict[str, list[tuple[str, str]]] = {
+    "decisions": [
+        ("strategy_type", "TEXT"),
+        ("debit_paid", "REAL"),
+        ("max_reward", "REAL"),
+        ("reward_risk", "REAL"),
+        ("required_move_pct", "REAL"),
+        ("expected_move_pct", "REAL"),
+        ("confidence", "TEXT"),
+        ("why_not_json", "TEXT"),
+        ("strategy_rationale", "TEXT"),
+    ],
+    "positions": [
+        ("strategy_type", "TEXT NOT NULL DEFAULT 'CREDIT'"),
+        ("debit_paid", "REAL"),
+        ("max_reward", "REAL"),
+    ],
+}
+
+
+async def _apply_migrations(conn: aiosqlite.Connection) -> None:
+    for table, columns in _MIGRATIONS.items():
+        cur = await conn.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in await cur.fetchall()}
+        for name, coltype in columns:
+            if name in existing:
+                continue
+            await conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {coltype}")
+            logger.info("Migrated: added %s.%s", table, name)
+    await conn.commit()
+
+
 async def init_db() -> None:
-    """Create tables from schema.sql if they don't exist."""
+    """Create tables from schema.sql if they don't exist, then migrate."""
     global _db_conn
     _db_conn = await aiosqlite.connect(settings.DB_PATH)
     _db_conn.row_factory = aiosqlite.Row
     schema = _SCHEMA_PATH.read_text()
     await _db_conn.executescript(schema)
     await _db_conn.commit()
+    await _apply_migrations(_db_conn)
     logger.info("Database initialized at %s", settings.DB_PATH)
 
 
@@ -32,6 +68,19 @@ async def get_db() -> aiosqlite.Connection:
     if _db_conn is None:
         await init_db()
     return _db_conn
+
+
+async def close_db() -> None:
+    """Close the connection and stop aiosqlite's worker thread.
+
+    That worker is a non-daemon thread, so leaving the connection open makes
+    the interpreter hang at shutdown waiting for it to join. Short-lived
+    entry points (the CLI) must call this before exiting.
+    """
+    global _db_conn
+    if _db_conn is not None:
+        await _db_conn.close()
+        _db_conn = None
 
 
 def _now() -> str:
@@ -95,6 +144,15 @@ async def insert_decision(
     expiry: Optional[str] = None,
     short_symbol: Optional[str] = None,
     long_symbol: Optional[str] = None,
+    strategy_type: Optional[str] = None,
+    debit_paid: Optional[float] = None,
+    max_reward: Optional[float] = None,
+    reward_risk: Optional[float] = None,
+    required_move_pct: Optional[float] = None,
+    expected_move_pct: Optional[float] = None,
+    confidence: Optional[str] = None,
+    why_not_json: Optional[str] = None,
+    strategy_rationale: Optional[str] = None,
 ) -> int:
     db = await get_db()
     cur = await db.execute(
@@ -103,14 +161,21 @@ async def insert_decision(
             selected_strategy, opportunity_score, checks_json, outcome,
             reject_reason, risk_gate_result, risk_gate_reason, order_id,
             credit_received, spread_width, breakeven, max_loss, dte,
-            short_strike, long_strike, expiry, short_symbol, long_symbol
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            short_strike, long_strike, expiry, short_symbol, long_symbol,
+            strategy_type, debit_paid, max_reward, reward_risk,
+            required_move_pct, expected_move_pct, confidence, why_not_json,
+            strategy_rationale
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             _now(), cycle_id, underlying, volatility_condition, trend_condition,
             selected_strategy, opportunity_score, checks_json, outcome,
             reject_reason, risk_gate_result, risk_gate_reason, order_id,
             credit_received, spread_width, breakeven, max_loss, dte,
             short_strike, long_strike, expiry, short_symbol, long_symbol,
+            strategy_type, debit_paid, max_reward, reward_risk,
+            required_move_pct, expected_move_pct, confidence, why_not_json,
+            strategy_rationale,
         ),
     )
     await db.commit()
@@ -240,6 +305,9 @@ async def insert_position(
     dte_at_entry: int,
     client_order_id: str,
     alpaca_order_id: Optional[str] = None,
+    strategy_type: str = "CREDIT",
+    debit_paid: Optional[float] = None,
+    max_reward: Optional[float] = None,
 ) -> int:
     db = await get_db()
     cur = await db.execute(
@@ -247,13 +315,13 @@ async def insert_position(
             opened_ts, underlying, strategy, short_symbol, long_symbol,
             qty, credit_received, spread_width, max_loss, profit_target,
             stop_loss_level, expiry, dte_at_entry, alpaca_order_id,
-            client_order_id, state
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN')""",
+            client_order_id, state, strategy_type, debit_paid, max_reward
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)""",
         (
             _now(), underlying, strategy, short_symbol, long_symbol,
             qty, credit_received, spread_width, max_loss, profit_target,
             stop_loss_level, expiry, dte_at_entry, alpaca_order_id,
-            client_order_id,
+            client_order_id, strategy_type, debit_paid, max_reward,
         ),
     )
     await db.commit()
@@ -270,7 +338,7 @@ async def update_position_state(
     await db.execute(
         """UPDATE positions SET state = ?, closed_ts = ?, close_pnl = ?, close_reason = ?
            WHERE client_order_id = ?""",
-        (_now(), _now(), pnl, reason, client_order_id),
+        (state, _now(), pnl, reason, client_order_id),
     )
     await db.commit()
 

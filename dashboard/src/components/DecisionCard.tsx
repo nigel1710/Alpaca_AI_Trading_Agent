@@ -6,6 +6,13 @@ const OUTCOME_COLORS: Record<string, string> = {
   WATCH: '#f59e0b',
   REJECT: '#ef4444',
   EXPIRED: '#64748b',
+  STAND_ASIDE: '#64748b',
+}
+
+const CONFIDENCE_COLORS: Record<string, string> = {
+  HIGH: '#22c55e',
+  MEDIUM: '#f59e0b',
+  LOW: '#64748b',
 }
 
 const s: Record<string, any> = {
@@ -50,6 +57,33 @@ const s: Record<string, any> = {
     fontSize: 10,
     marginTop: 4,
   }),
+  rationale: {
+    color: '#94a3b8',
+    fontSize: 10,
+    fontStyle: 'italic',
+    marginBottom: 8,
+    lineHeight: 1.4,
+  },
+  confidence: (level: string): React.CSSProperties => ({
+    marginLeft: 10,
+    fontSize: 9,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+    color: CONFIDENCE_COLORS[level] || '#64748b',
+    border: `1px solid ${CONFIDENCE_COLORS[level] || '#64748b'}`,
+    borderRadius: 3,
+    padding: '1px 6px',
+  }),
+  rr: {
+    color: '#22c55e',
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
+  whyNot: {
+    color: '#94a3b8',
+    fontSize: 10,
+    lineHeight: 1.4,
+  },
 }
 
 function formatTs(ts: string): string {
@@ -75,12 +109,47 @@ export default function DecisionCardComponent({ decision }: Props) {
       <div style={s.meta}>
         {formatTs(decision.ts)} | cycle: {decision.cycle_id} |{' '}
         {decision.volatility_condition} / {decision.trend_condition} | {decision.selected_strategy}
+        {decision.strategy_type ? ` (${decision.strategy_type})` : ''}
       </div>
+
+      {decision.strategy_rationale && (
+        <div style={s.rationale}>{decision.strategy_rationale}</div>
+      )}
 
       {decision.opportunity_score !== null && (
         <div style={s.section}>
           <div style={s.sectionTitle}>OPPORTUNITY SCORE</div>
           <span style={s.score(decision.opportunity_score)}>{decision.opportunity_score}/100</span>
+          {decision.confidence && (
+            <span style={s.confidence(decision.confidence)}>
+              {decision.confidence} CONFIDENCE
+            </span>
+          )}
+        </div>
+      )}
+
+      {decision.strategy_type === 'DEBIT' && decision.reward_risk !== null && (
+        <div style={s.section}>
+          <div style={s.sectionTitle}>ASYMMETRY</div>
+          <div>
+            <span style={s.detail}>
+              Risk: ${decision.debit_paid !== null ? (decision.debit_paid * 100).toFixed(0) : '—'}
+            </span>
+            <span style={s.detail}>
+              Reward: ${decision.max_reward !== null ? decision.max_reward.toFixed(0) : '—'}
+            </span>
+            <span style={s.rr}>R:R {decision.reward_risk.toFixed(2)} : 1</span>
+          </div>
+          {decision.required_move_pct !== null && decision.expected_move_pct !== null && (
+            <div style={{ marginTop: 3 }}>
+              <span style={s.detail}>
+                Required move: {(decision.required_move_pct * 100).toFixed(2)}%
+              </span>
+              <span style={s.detail}>
+                Expected move: ±{(decision.expected_move_pct * 100).toFixed(2)}%
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -105,7 +174,11 @@ export default function DecisionCardComponent({ decision }: Props) {
         <div style={s.section}>
           <div style={s.sectionTitle}>POSITION DETAILS</div>
           <div>
-            <span style={s.detail}>Credit: ${decision.credit_received?.toFixed(2)}</span>
+            {decision.strategy_type === 'DEBIT' ? (
+              <span style={s.detail}>Debit: ${decision.debit_paid?.toFixed(2)}</span>
+            ) : (
+              <span style={s.detail}>Credit: ${decision.credit_received?.toFixed(2)}</span>
+            )}
             <span style={s.detail}>Width: ${decision.spread_width?.toFixed(2)}</span>
             <span style={s.detail}>MaxLoss: ${decision.max_loss?.toFixed(2)}</span>
             <span style={s.detail}>DTE: {decision.dte}d</span>
@@ -131,6 +204,13 @@ export default function DecisionCardComponent({ decision }: Props) {
 
       {decision.reject_reason && (
         <div style={s.reject}>↳ {decision.reject_reason}</div>
+      )}
+
+      {decision.why_not?.rejected_alternative && (
+        <div style={s.section}>
+          <div style={s.sectionTitle}>WHY NOT THE OTHER SIDE?</div>
+          <div style={s.whyNot}>{decision.why_not.rejected_alternative}</div>
+        </div>
       )}
     </div>
   )

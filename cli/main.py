@@ -3,6 +3,7 @@
 import click
 
 from cli.scan import scan
+from cli.monitor import monitor
 from cli.report import score_report
 from cli.flatten import flatten
 
@@ -14,6 +15,7 @@ def cli() -> None:
 
 
 cli.add_command(scan)
+cli.add_command(monitor)
 cli.add_command(score_report)
 cli.add_command(flatten)
 

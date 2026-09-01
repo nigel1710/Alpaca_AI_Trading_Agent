@@ -9,6 +9,18 @@ export interface CheckResult {
   note: string
 }
 
+export interface WhyNotEntry {
+  check: string
+  detail: string
+}
+
+export interface WhyNot {
+  outcome: string
+  passed: WhyNotEntry[]
+  failed: WhyNotEntry[]
+  rejected_alternative: string
+}
+
 export interface Decision {
   id: number
   ts: string
@@ -19,7 +31,7 @@ export interface Decision {
   selected_strategy: string | null
   opportunity_score: number | null
   checks: CheckResult[]
-  outcome: 'TRADE' | 'WATCH' | 'REJECT' | 'EXPIRED'
+  outcome: 'TRADE' | 'WATCH' | 'REJECT' | 'EXPIRED' | 'STAND_ASIDE'
   reject_reason: string | null
   risk_gate_result: string | null
   risk_gate_reason: string | null
@@ -34,6 +46,16 @@ export interface Decision {
   short_symbol: string | null
   long_symbol: string | null
   order_id: string | null
+  // Adaptive strategy fields
+  strategy_type: 'DEBIT' | 'CREDIT' | null
+  debit_paid: number | null
+  max_reward: number | null
+  reward_risk: number | null
+  required_move_pct: number | null
+  expected_move_pct: number | null
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW' | null
+  strategy_rationale: string | null
+  why_not: WhyNot | null
 }
 
 export interface Position {
@@ -57,6 +79,9 @@ export interface Position {
   closed_ts: string | null
   close_pnl: number | null
   close_reason: string | null
+  strategy_type: 'DEBIT' | 'CREDIT' | null
+  debit_paid: number | null
+  max_reward: number | null
 }
 
 export interface WatchItem {

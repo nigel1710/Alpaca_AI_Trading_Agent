@@ -11,11 +11,11 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from agent.logging.cards import build_card, card_to_dict
-from agent.main import run_scan_cycle
+from agent.main import run_position_monitor, run_scan_cycle
 from agent.perception.alpaca_client import AlpacaClient
 from config import settings
 from storage import db as storage
-from storage.db import get_db, init_db
+from storage.db import close_db, get_db, init_db
 from datetime import date
 
 app = FastAPI(title="Options Alpha Agent API")
@@ -41,6 +41,7 @@ async def startup() -> None:
 async def shutdown() -> None:
     if _client:
         await _client.close()
+    await close_db()
 
 
 @app.get("/api/health")
@@ -57,6 +58,30 @@ async def trigger_scan(x_scan_token: Optional[str] = Header(None)):
     db = await get_db()
     await run_scan_cycle(db, _client, verbose=False)
     return {"status": "cycle complete"}
+
+
+@app.post("/api/monitor")
+async def trigger_monitor(x_scan_token: Optional[str] = Header(None)):
+    """Check open positions against exit rules without scanning for entries.
+
+    Separate from /api/scan (strategy doc §14) so exits can be checked on a
+    faster cadence than opportunity scanning.
+    """
+    if settings.SCAN_TRIGGER_TOKEN and x_scan_token != settings.SCAN_TRIGGER_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid or missing X-Scan-Token")
+    db = await get_db()
+    closed = await run_position_monitor(db, _client, verbose=False)
+    return {
+        "status": "monitor complete",
+        "closed": [
+            {
+                "underlying": p.get("underlying"),
+                "reason": p.get("close_reason"),
+                "pnl": p.get("close_pnl"),
+            }
+            for p in closed
+        ],
+    }
 
 
 @app.get("/api/events")

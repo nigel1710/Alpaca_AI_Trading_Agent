@@ -5,7 +5,7 @@ import asyncio
 import click
 
 from agent.main import run_one_cycle
-from storage.db import init_db, get_db
+from storage.db import close_db, get_db, init_db
 from agent.perception.alpaca_client import AlpacaClient
 
 
@@ -24,3 +24,4 @@ async def _scan(verbose: bool) -> None:
         await run_one_cycle(db=db, client=client, verbose=verbose)
     finally:
         await client.close()
+        await close_db()

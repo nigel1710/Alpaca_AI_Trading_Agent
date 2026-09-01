@@ -27,34 +27,65 @@ SCAN_TRIGGER_TOKEN: str = os.getenv("SCAN_TRIGGER_TOKEN", "")
 # --- Watchlist ---
 WATCHLIST: list[str] = ["SPY", "QQQ", "IWM"]
 
-# --- Expiry selection ---
+# --- Expiry selection (credit spreads: short-dated premium selling) ---
 DTE_MIN: int = 2
 DTE_MAX: int = 9
-EXPIRY_CUTOFF: str = "2026-09-04"  # only consider expiries before this date
+EXPIRY_CUTOFF: str = "2026-09-04"  # credit spreads only: no expiries on/after this date
+
+# --- Expiry selection (debit spreads: directional theses need time to develop) ---
+# NOTE: EXPIRY_CUTOFF above is deliberately NOT applied to debit spreads — a
+# 21-45 DTE window cannot coexist with a cutoff a few days out. See README.
+DEBIT_DTE_MIN: int = 21
+DEBIT_DTE_MAX: int = 45
+DEBIT_DTE_TARGET: int = 32  # midpoint of the preferred 30-35 range
 
 # --- Trend signal ---
 MA_SHORT: int = 10
 MA_LONG: int = 30
 TREND_CLARITY_THRESHOLD: float = 0.005  # 0.5% of price
+# FAIR-volatility regimes require stronger directional confirmation before
+# a debit spread is considered at all (strategy doc §5).
+TREND_STRONG_MULTIPLIER: float = 1.5  # need 1.5x TREND_CLARITY_THRESHOLD
 
-# --- Volatility signal ---
-IV_RICH_MULTIPLIER: float = 1.2    # ATM IV >= 1.2x 20-day realized vol → ELEVATED
+# --- Volatility regime (three-band: CHEAP / FAIR / RICH) ---
+IV_CHEAP_MAX: float = 0.90    # IV/RVol <  0.90        → CHEAP  (buy premium)
+IV_RICH_MIN: float = 1.20     # IV/RVol >  1.20        → RICH   (sell premium)
+                              # between the two        → FAIR   (needs confirmation)
+IV_RICH_MULTIPLIER: float = IV_RICH_MIN  # back-compat alias
 IV_STABLE_MULTIPLIER: float = 1.15  # today ATM IV <= 1.15x 3-day avg → stable
 
-# --- Scored checklist thresholds ---
+# --- Credit spread checklist thresholds ---
 CREDIT_WIDTH_FLOOR: float = 0.30  # credit >= 30% of spread width
-DELTA_CEILING: float = 0.30       # short strike delta <= 0.30 (raised from 0.20 — collects more premium per checklist Check 5/7)
-LIQUIDITY_SPREAD_MAX: float = 0.10  # bid-ask spread <= 10% of credit
+DELTA_CEILING: float = 0.30       # short strike delta <= 0.30
+LIQUIDITY_SPREAD_MAX: float = 0.10  # bid-ask spread <= 10% of credit/debit
 LIQUIDITY_OI_MIN: int = 100         # open interest >= 100 per leg
+
+# --- Debit spread checklist thresholds ---
+DEBIT_LONG_DELTA_MIN: float = 0.45   # long leg near-the-money
+DEBIT_LONG_DELTA_MAX: float = 0.65
+DEBIT_SHORT_DELTA_MIN: float = 0.20  # short leg further out
+DEBIT_SHORT_DELTA_MAX: float = 0.40
+DEBIT_RR_MIN: float = 1.5            # minimum reward/risk to be considered
+DEBIT_RR_PREFERRED: float = 2.0      # full points at or above this
+# Required move must leave headroom inside the expected move; a spread needing
+# the full expected move to break even is not a realistic trade.
+REQUIRED_MOVE_HEADROOM: float = 0.80  # required_move <= 0.80 * expected_move
 
 # --- Risk management ---
 MAX_LOSS_PCT: float = 0.02          # 2% of account equity per trade
 MAX_CONCURRENT_POSITIONS: int = 4
 
-# --- Exit rules ---
+# --- Exit rules (credit spreads) ---
 PROFIT_TARGET: float = 0.50         # close at 50% of credit collected
 STOP_LOSS_MULTIPLE: float = 2.0     # close at 2x credit collected
 TIME_EXIT_DTE: int = 1              # close at 1 DTE
+
+# --- Exit rules (debit spreads) ---
+# A debit spread is closed by SELLING it back, so value moves the other way:
+# profit when it is worth more than paid, stop when it has lost value.
+DEBIT_PROFIT_CAPTURE: float = 0.50  # take 50% of max achievable profit
+DEBIT_STOP_LOSS_PCT: float = 0.50   # stop after losing 50% of premium paid
+DEBIT_TIME_EXIT_DTE: int = 7        # close at 7 DTE — theta decay accelerates
 
 # --- WATCH lifecycle ---
 WATCH_EXPIRY_CYCLES: int = 2        # WATCH items expire after 2 scan cycles
@@ -62,9 +93,12 @@ WATCH_EXPIRY_CYCLES: int = 2        # WATCH items expire after 2 scan cycles
 # --- Scheduling ---
 SCAN_INTERVAL_MINUTES: int = 15
 
-# --- Score bands ---
+# --- Score bands / confidence (strategy doc §11) ---
+#   80-100 → HIGH   conviction → TRADE
+#   65-79  → MEDIUM          → WATCH / CONDITIONAL
+#   < 65   → LOW             → STAND ASIDE
 SCORE_TRADE_MIN: int = 80
-SCORE_WATCH_MIN: int = 60
+SCORE_WATCH_MIN: int = 65
 
 # --- Circuit breaker ---
 CIRCUIT_BREAKER_MAX_ORDERS: int = 10

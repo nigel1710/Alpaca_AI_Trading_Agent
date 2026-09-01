@@ -33,7 +33,16 @@ CREATE TABLE IF NOT EXISTS decisions (
     long_strike REAL,
     expiry TEXT,
     short_symbol TEXT,
-    long_symbol TEXT
+    long_symbol TEXT,
+    strategy_type TEXT,
+    debit_paid REAL,
+    max_reward REAL,
+    reward_risk REAL,
+    required_move_pct REAL,
+    expected_move_pct REAL,
+    confidence TEXT,
+    why_not_json TEXT,
+    strategy_rationale TEXT
 );
 
 -- watch_items: stateful WATCH tracking
@@ -73,7 +82,10 @@ CREATE TABLE IF NOT EXISTS positions (
     state TEXT NOT NULL DEFAULT 'OPEN',
     closed_ts TEXT,
     close_pnl REAL,
-    close_reason TEXT
+    close_reason TEXT,
+    strategy_type TEXT NOT NULL DEFAULT 'CREDIT',
+    debit_paid REAL,
+    max_reward REAL
 );
 
 -- baselines: unfiltered and passive baseline records

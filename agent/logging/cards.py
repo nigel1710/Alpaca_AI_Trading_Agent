@@ -30,12 +30,28 @@ class DecisionCard:
     short_symbol: Optional[str]
     long_symbol: Optional[str]
     order_id: Optional[str]
+    # Adaptive-strategy fields
+    strategy_type: Optional[str]
+    debit_paid: Optional[float]
+    max_reward: Optional[float]
+    reward_risk: Optional[float]
+    required_move_pct: Optional[float]
+    expected_move_pct: Optional[float]
+    confidence: Optional[str]
+    strategy_rationale: Optional[str]
+    why_not: Optional[dict]
 
 
 def build_card(decision_row: dict) -> DecisionCard:
     """Construct a DecisionCard from a DB decisions row."""
     checks_raw = decision_row.get("checks_json")
     checks = json.loads(checks_raw) if checks_raw else []
+
+    why_not_raw = decision_row.get("why_not_json")
+    try:
+        why_not = json.loads(why_not_raw) if why_not_raw else None
+    except (ValueError, TypeError):
+        why_not = None
 
     return DecisionCard(
         underlying=decision_row.get("underlying", ""),
@@ -61,6 +77,15 @@ def build_card(decision_row: dict) -> DecisionCard:
         short_symbol=decision_row.get("short_symbol"),
         long_symbol=decision_row.get("long_symbol"),
         order_id=decision_row.get("order_id"),
+        strategy_type=decision_row.get("strategy_type"),
+        debit_paid=decision_row.get("debit_paid"),
+        max_reward=decision_row.get("max_reward"),
+        reward_risk=decision_row.get("reward_risk"),
+        required_move_pct=decision_row.get("required_move_pct"),
+        expected_move_pct=decision_row.get("expected_move_pct"),
+        confidence=decision_row.get("confidence"),
+        strategy_rationale=decision_row.get("strategy_rationale"),
+        why_not=why_not,
     )
 
 
